@@ -56,15 +56,21 @@ jobs:
 
       # Step 4: Build Unity Project
       - name: Build project
-        uses: game-ci/unity-builder@v2
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          targetPlatform: ${{ vars.TARGET_PLATFORM }}
-          buildsPath: ${{ vars.BUILD_PATH }}
-          allowDirtyBuild: true
+        run: |
+          docker rmi $(docker images -q)
+          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0
+          docker run --rm \
+            -v $GITHUB_WORKSPACE:/workspace \
+            -e UNITY_LICENSE=$UNITY_LICENSE \
+            -e UNITY_EMAIL=$UNITY_EMAIL \
+            -e UNITY_PASSWORD=$UNITY_PASSWORD \
+            -e UNITY_SERIAL=$UNITY_SERIAL \
+            -e UNITY_VERSION=2022.3.10f1 \
+            -e BUILD_PATH=$BUILD_PATH \
+            -e BUILD_NAME=WebGL \
+            -e BUILD_TARGET=WebGL \
+            unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0 /bin/bash -c "/workspace/entrypoint.sh"
+    
 
       # Step 5: Upload Build Artifact
       - name: Upload Build Artifact
