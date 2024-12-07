@@ -56,7 +56,7 @@ jobs:
       - name: Pull latest changes from main
         run: |
           echo "Pulling latest changes from main"
-          git pull origin main
+          git pull origin main --rebase
 
       - name: Echo Sync Main Completed
         run: echo "Temporary branch has been successfully synced with main."
