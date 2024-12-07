@@ -38,20 +38,42 @@ jobs:
           key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
 
       - name: Git LFS Pull
+jobs:
+  build:
+    name: Unity Build 👽
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout (without LFS)
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          token: ${{secrets.PAT}}
+      # Git LFS
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Restore LFS cache
+        uses: actions/cache@v2
+        id: lfs-cache
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
+
+      - name: Git LFS Pull
         run: |
           git lfs pull
           git add .
-          git reset --hard # Este paso se mantiene, pero considera si realmente es necesario
+          git reset --hard
 
-      # Cache de dependencias de Unity
-      - uses: actions/cache@v3
+      # # Cache
+      - uses: actions/cache@v2
         with:
           path: Library
           key: Library-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
             Library-
 
-      # Build
+      # # Build
       - name: Build project
         uses: game-ci/unity-builder@v2
         env:
@@ -62,43 +84,41 @@ jobs:
           targetPlatform: ${{ vars.TARGET_PLATFORM }}
           buildsPath: ${{ vars.BUILD_PATH }}
           allowDirtyBuild: true
-
       # Output: Artifact
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ vars.ARTIFACT_NAME }}
           path: ${{ vars.BUILD_PATH }}
-
-      # Despliegue a gh-pages
+      # Deployment
       - name: Stash build result and reset local changes
         run: |
           echo "Applying initial configs"
+          sudo chown -R $USER:$USER ${{ vars.BUILD_PATH }}
           git config --global user.email "${{ secrets.GH_EMAIL }}"
           git config --global user.name "${{ secrets.GH_USERNAME }}"
           echo "Stash and reset"
           git add ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}
           git stash push ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}
           git stash list
-          git reset --hard # Solo cuando sea estrictamente necesario
-
-      - name: Limpiar rama gh-pages
+          git reset --hard
+          sudo git clean -d -x -f
+    # Deployment
+      - name: Cleaning gh-pages branch
         run: |
           echo "Switch to ${{ vars.DEPLOYMENT_BRANCH }}"
           git switch -f ${{ vars.DEPLOYMENT_BRANCH }}
           git reset --hard
-          git clean -d -x -f
+          sudo git clean -d -x -f
           rm -r *
           git add *
-          git commit -m "Cleaning branch"
+          git commit -m "cleaning branch"
           git push
-
-      - name: Aplicando archivos stashed a la rama gh-pages
+      - name: Applying stashed files to ${{ vars.DEPLOYMENT_BRANCH }}
         run: |
           echo "Applying stash"
           git stash apply stash@{0}
-
-      - name: Copiar archivos al directorio raíz
+      - name: Copying files to root directory
         run: |
           cd ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}/${{ vars.TARGET_PLATFORM }}
           ls
@@ -107,7 +127,6 @@ jobs:
           rm -r ${{ vars.BUILD_PATH }}
           ls
           pwd
-
       - name: Pushing deployment to gh-pages branch
         run: |
           pwd
@@ -115,5 +134,5 @@ jobs:
           git add *
           git commit -m "Deployment"
           git push
-          git reset --hard # Este paso también podría optimizarse si no es necesario
-          git clean -d -x -f
+          git reset --hard
+          sudo git clean -d -x -f
