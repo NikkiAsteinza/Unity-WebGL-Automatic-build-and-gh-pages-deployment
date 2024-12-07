@@ -1,9 +1,6 @@
 name: Unity WebGL Automatic Build 👽✨🚀
 
 on:
-  push:
-    branches:
-      - '1-configure-as-a-unity-package'
   pull_request:
     branches:
       - 'main'
@@ -23,77 +20,92 @@ jobs:
     name: Unity Build 👽
     runs-on: ubuntu-latest
     steps:
-      
-      # Step 1: Checkout the repository
+      # Step 1: Checkout repository without LFS
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
         with:
           token: ${{ secrets.PAT }}
 
-      # Step 2: Stash any local changes (if needed) and apply them later if necessary
-      - name: Stash any local changes (if needed)
-        run: |
-          echo "Stashing local changes"
-          git stash push --include-untracked
+      # Step 2: Git LFS: Restore LFS files
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
 
-      # Step 3: Pull the latest changes from main
-      - name: Pull latest changes from main
-        run: |
-          echo "Pulling latest changes from main"
-          git pull origin main --no-rebase
+      - name: Restore LFS cache
+        uses: actions/cache@v2
+        id: lfs-cache
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
 
-      # Step 4: Pull Unity image and build the project using Unity Builder
+      - name: Git LFS Pull
+        run: |
+          git lfs pull
+          git add .
+          git reset --hard
+
+      # Step 3: Cache Unity Library
+      - uses: actions/cache@v2
+        with:
+          path: Library
+          key: Library-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-
+
+      # Step 4: Build Unity Project
       - name: Build project
-        run: |
-          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0
-          docker run --rm \
-            -v $GITHUB_WORKSPACE:/workspace \
-            -e UNITY_LICENSE=$UNITY_LICENSE \
-            -e UNITY_EMAIL=$UNITY_EMAIL \
-            -e UNITY_PASSWORD=$UNITY_PASSWORD \
-            -e UNITY_SERIAL=$UNITY_SERIAL \
-            -e UNITY_VERSION=2022.3.10f1 \
-            -e BUILD_PATH=$BUILD_PATH \
-            -e BUILD_NAME=WebGL \
-            -e BUILD_TARGET=WebGL \
-            unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0 /bin/bash -c "/workspace/entrypoint.sh"
+        uses: game-ci/unity-builder@v2
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          BUILD_PATH: ${{ secrets.BUILD_PATH }}
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      # Step 5: Upload build artifact
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v3
         with:
-          name: build-artifact
-          path: ${{ secrets.BUILD_PATH }}
+          targetPlatform: ${{ vars.TARGET_PLATFORM }}
+          buildsPath: ${{ vars.BUILD_PATH }}
+          allowDirtyBuild: true
 
-      # Step 6: Checkout the gh-pages branch
+      # Step 5: Upload Build Artifact
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ vars.ARTIFACT_NAME }}
+          path: ${{ vars.BUILD_PATH }}
+
+      # Step 6: Stash the build result and reset local changes
+      - name: Stash build result and reset local changes
+        run: |
+          echo "Stashing build result and resetting local changes"
+          sudo chown -R $USER:$USER ${{ vars.BUILD_PATH }}
+          git config --global user.email "${{ secrets.GH_EMAIL }}"
+          git config --global user.name "${{ secrets.GH_USERNAME }}"
+          git add ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}
+          git stash push ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}
+          git reset --hard
+          sudo git clean -d -x -f
+
+      # Step 7: Checkout gh-pages branch
       - name: Checkout gh-pages branch
         run: |
           echo "Switching to gh-pages branch"
-          git checkout ${ secrets.DEPLOYMENT_BRANCH }
+          git switch -f ${{ secrets.DEPLOYMENT_BRANCH }}
+          git reset --hard
+          sudo git clean -d -x -f
 
-      # Step 7: Apply the stashed changes to the gh-pages branch
+      # Step 8: Apply stashed changes to gh-pages branch
       - name: Apply stashed changes to gh-pages
         run: |
           echo "Applying stashed changes to gh-pages"
-          git stash apply
-          git add -A
+          git stash apply stash@{0}
+          git add *
           git commit -m "Deploying latest build to gh-pages"
           
-      # Step 8: Push the changes to gh-pages
+      # Step 9: Push changes to gh-pages branch
       - name: Push changes to gh-pages branch
         run: |
           echo "Pushing changes to gh-pages branch"
-          git push origin ${ secrets.DEPLOYMENT_BRANCH }
+          git push origin ${{ secrets.DEPLOYMENT_BRANCH }}
 
-      # Step 9: Clean up: Delete stashed changes (if any)
+      # Step 10: Clean up: Delete stashed changes (if any)
       - name: Clean up stashed changes
         run: |
-          echo "Cleaning up stashed changes (if any)"
+          echo "Cleaning up stashed changes"
           git stash clear
