@@ -57,14 +57,15 @@ jobs:
       # Unity Build
       - name: Build project
         uses: game-ci/unity-builder@v2
+        with:
+          unityVersion: '2022.3.10f1'
+          targetPlatform: WebGL
+          buildsPath: CI-Output/WebGL
+          allowDirtyBuild: true
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          targetPlatform: WebGL
-          buildsPath: CI-Output/WebGL
-          allowDirtyBuild: true
       
       # Debug logs
       - name: Log build directory
