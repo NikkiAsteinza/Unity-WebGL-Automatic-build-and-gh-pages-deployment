@@ -3,7 +3,6 @@ name: Unity WebGL Automatic Build 👽✨🚀
 on:
   push:
     branches:
-#     - 'main'
       - '1-configure-as-a-unity-package'
   pull_request:
     branches:
@@ -11,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -24,116 +23,49 @@ jobs:
     name: Unity Build 👽
     runs-on: ubuntu-latest
     steps:
-      # Checkout repository
+      # 1. Checkout repository
       - name: Checkout repository
-        uses: actions/checkout@v2
-        with:
-          token: ${{ secrets.PAT }}
+        uses: actions/checkout@v3
 
-      # Git LFS: Create file list and restore cache
-      - name: Create LFS file list
-        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
-
-      - name: Restore LFS cache
-        uses: actions/cache@v2
-        id: lfs-cache
-        with:
-          path: .git/lfs
-          key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
-          restore-keys: |
-            ${{ runner.os }}-lfs-
-
-      - name: Git LFS Pull
+      # 2. Set up Git LFS
+      - name: Set up Git LFS
         run: |
+          git lfs install
           git lfs pull
-          git add .
-          git reset --hard
 
-      # Cache Unity Library
-      - uses: actions/cache@v2
+      # 3. Cache Unity Library
+      - uses: actions/cache@v3
         with:
           path: Library
           key: Library-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
             Library-
 
-      # Build project
-      - name: Build project
+      # 4. Build project using Unity Docker
+      - name: Build WebGL with Unity
         run: |
-          docker rmi $(docker images -q)
           docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0
 
-          # Verify that entrypoint.sh exists in the container
-          docker run --rm unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0 /bin/bash -c "ls -l /workspace"
-
-          # Run Unity build process
           docker run --rm \
-            -v $GITHUB_WORKSPACE:/workspace \
+            -v ${{ github.workspace }}:/workspace \
             -e UNITY_LICENSE=$UNITY_LICENSE \
-            -e UNITY_EMAIL=$UNITY_EMAIL \
-            -e UNITY_PASSWORD=$UNITY_PASSWORD \
-            -e UNITY_SERIAL=$UNITY_SERIAL \
-            -e UNITY_VERSION=2022.3.10f1 \
-            -e BUILD_PATH=$BUILD_PATH \
-            -e BUILD_NAME=WebGL \
-            -e BUILD_TARGET=WebGL \
-            unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0 /bin/bash -c "/workspace/entrypoint.sh"
+            unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0 \
+            /bin/bash -c "/opt/unity/Editor/Unity -batchmode -nographics -quit -buildTarget WebGL -projectPath /workspace -executeMethod BuildPipeline.BuildPlayer"
+
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          BUILD_PATH: ${{ secrets.BUILD_PATH }}
-          GITHUB_WORKSPACE: ${{ github.workspace }}
 
-      # Upload build artifact
-      - name: Upload Build Artifact
+      # 5. Upload build artifact
+      - name: Upload WebGL Build
         uses: actions/upload-artifact@v3
         with:
-          name: WebGL-Build-Artifact
-          path: ${{ secrets.BUILD_PATH }}
+          name: WebGL-Build
+          path: Build/WebGL/
 
-      # Stash build result and reset local changes
-      - name: Stash build result and reset local changes
-        run: |
-          echo "Applying initial configs"
-          sudo chown -R $USER:$USER ${{ secrets.BUILD_PATH }}
-          git config --global user.email "${{ secrets.GH_EMAIL }}"
-          git config --global user.name "${{ secrets.GH_USERNAME }}"
-          echo "Stash and reset"
-          git add ${{ secrets.BUILD_PATH }}/${{ secrets.TARGET_PLATFORM }}
-          git stash push ${{ secrets.BUILD_PATH }}/${{ secrets.TARGET_PLATFORM }}
-          git stash list
-          git reset --hard
-          sudo git clean -d -x -f
-
-      # Apply stashed files to gh-pages branch
-      - name: Switch to gh-pages branch and apply build artifact
-        run: |
-          echo "Switch to gh-pages branch"
-          git switch -f ${{ secrets.DEPLOYMENT_BRANCH }}
-          git reset --hard
-          sudo git clean -d -x -f
-          git add *
-          git commit -m "Cleaning gh-pages branch"
-          git push
-
-      - name: Apply stashed files to gh-pages branch
-        run: |
-          echo "Applying stash"
-          git stash apply stash@{0}
-
-      # Copy build result to root directory
-      - name: Copying files to root directory
-        run: |
-          cd ${{ secrets.BUILD_PATH }}/${{ secrets.TARGET_PLATFORM }}/${{ secrets.TARGET_PLATFORM }}
-          cp -r * ../../../
-          cd ../../../
-          rm -r ${{ secrets.BUILD_PATH }}
-
-      # Push deployment to gh-pages branch
-      - name: Push deployment to gh-pages branch
-        run: |
-          git add *
-          git commit -m "Deployment to gh-pages"
-          git push
+      # 6. Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: Build/WebGL/
+          publish_branch: gh-pages
