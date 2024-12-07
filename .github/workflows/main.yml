@@ -56,19 +56,28 @@ jobs:
           restore-keys: |
             Library-
 
-      # Build the project using Unity Builder (updated image)
+      # Pull Unity image and Build project using Unity Builder
       - name: Build project
-        uses: game-ci/unity-builder@v2
-        with:
-          targetPlatform: WebGL  # Use WebGL platform directly
-          unityVersion: 2022.3.10f1 # Ensure the Unity version is set correctly
-          allowDirtyBuild: true
+        run: |
+          docker pull unityci/editor  # Ensure the latest image is pulled
+          docker run --rm \
+            -v $GITHUB_WORKSPACE:/workspace \
+            -e UNITY_LICENSE=$UNITY_LICENSE \
+            -e UNITY_EMAIL=$UNITY_EMAIL \
+            -e UNITY_PASSWORD=$UNITY_PASSWORD \
+            -e UNITY_SERIAL=$UNITY_SERIAL \
+            -e UNITY_VERSION=2022.3.10f1 \
+            -e BUILD_PATH=$BUILD_PATH \
+            -e BUILD_NAME=WebGL \
+            -e BUILD_TARGET=WebGL \
+            unityci/editor /bin/bash -c "/workspace/entrypoint.sh"
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           BUILD_PATH: ${{ secrets.BUILD_PATH }}
-          BUILD_NAME: WebGL
+          GITHUB_WORKSPACE: ${{ github.workspace }}
 
       # Upload build artifact
       - name: Upload Build Artifact
