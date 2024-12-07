@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # Permiso para escribir en el repositorio
+  contents: read
   pages: write
   id-token: write
 
@@ -19,62 +19,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Checkout Repository
-  checkout:
-    name: Checkout Repository
-    runs-on: ubuntu-22.04
+  build:
+    name: Unity Build 👽
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.PAT }}
       
-      - name: Echo Checkout Completed
-        run: echo "Repository has been successfully checked out."
-
-  # Create Temporary Branch and Sync with Main
-  sync-main:
-    name: Sync Temp Branch with Main
-    runs-on: ubuntu-22.04
-    needs: checkout
-    steps:
+      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.PAT }}
 
-      - name: Checkout deployment branch
+      # Step 2: Stash any local changes (if needed) and apply them later if necessary
+      - name: Stash any local changes (if needed)
         run: |
-          echo "Checking out deployment branch: ${{ secrets.DEPLOYMENT_BRANCH }}"
-          git checkout ${{ secrets.DEPLOYMENT_BRANCH }}
-      
-      - name: Create temporary branch from deployment branch
-        run: |
-          echo "Creating temporary branch"
-          git checkout -b temp
+          echo "Stashing local changes"
+          git stash push --include-untracked
 
+      # Step 3: Pull the latest changes from main
       - name: Pull latest changes from main
         run: |
           echo "Pulling latest changes from main"
-          git pull origin main --rebase
+          git pull origin main --no-rebase
 
-      - name: Echo Sync Main Completed
-        run: echo "Temporary branch has been successfully synced with main."
-
-  # Build Unity Project Job
-  build:
-    name: Build Unity Project
-    runs-on: ubuntu-22.04
-    needs: sync-main  # This job depends on the "sync-main" job
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.PAT }}
-      
-      - name: Pull Unity Image and Build Project
+      # Step 4: Pull Unity image and build the project using Unity Builder
+      - name: Build project
         run: |
-          echo "Starting Unity build"
           docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0
           docker run --rm \
             -v $GITHUB_WORKSPACE:/workspace \
@@ -87,80 +57,43 @@ jobs:
             -e BUILD_NAME=WebGL \
             -e BUILD_TARGET=WebGL \
             unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0 /bin/bash -c "/workspace/entrypoint.sh"
-        
-      - name: Echo Build Completed
-        run: echo "Unity build has completed successfully."
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          BUILD_PATH: ${{ secrets.BUILD_PATH }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
 
-  # Commit the Build Results and Push to Deployment Branch (if build is successful)
-  commit-and-push:
-    name: Commit and Push to Deployment Branch
-    runs-on: ubuntu-22.04
-    needs: build  # This job depends on the "build" job
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.PAT }}
-      
-      - name: Checkout deployment branch
-        run: |
-          echo "Checking out deployment branch: ${{ secrets.DEPLOYMENT_BRANCH }}"
-          git checkout ${{ secrets.DEPLOYMENT_BRANCH }}
-
-      - name: Merge temporary branch into deployment branch
-        run: |
-          echo "Merging changes from temp to deployment branch"
-          git merge temp --no-ff --commit -m "Merge build changes into deployment branch"
-
-      - name: Push changes to deployment branch
-        run: |
-          echo "Pushing changes to deployment branch"
-          git push origin ${{ secrets.DEPLOYMENT_BRANCH }}
-      
-      - name: Echo Commit and Push Completed
-        run: echo "Changes have been successfully committed and pushed to the deployment branch."
-
-  # Upload Build Artifact
-  upload-artifact:
-    name: Upload Build Artifact
-    runs-on: ubuntu-22.04
-    needs: commit-and-push  # This job depends on the "commit-and-push" job
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.PAT }}
-
-      - name: Upload build artifact
+      # Step 5: Upload build artifact
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v3
         with:
           name: build-artifact
-          path: ${{ secrets.BUILD_PATH }}  # Ensure this points to the folder with the build output
+          path: ${{ secrets.BUILD_PATH }}
 
-      - name: Echo Artifact Uploaded
-        run: echo "Build artifact has been uploaded successfully."
-
-  # Clean up temporary branch (always delete the temp branch)
-  cleanup:
-    name: Clean Up Temporary Branch
-    runs-on: ubuntu-22.04
-    needs: upload-artifact  # This job depends on the "upload-artifact" job
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.PAT }}
-      
-      - name: Delete temporary branch locally
+      # Step 6: Checkout the gh-pages branch
+      - name: Checkout gh-pages branch
         run: |
-          echo "Deleting temporary branch"
-          git branch -D temp
-        
-      - name: Delete temporary branch remotely
+          echo "Switching to gh-pages branch"
+          git checkout ${ secrets.DEPLOYMENT_BRANCH }
+
+      # Step 7: Apply the stashed changes to the gh-pages branch
+      - name: Apply stashed changes to gh-pages
         run: |
-          echo "Deleting temporary branch from remote"
-          git push origin --delete temp
+          echo "Applying stashed changes to gh-pages"
+          git stash apply
+          git add -A
+          git commit -m "Deploying latest build to gh-pages"
+          
+      # Step 8: Push the changes to gh-pages
+      - name: Push changes to gh-pages branch
+        run: |
+          echo "Pushing changes to gh-pages branch"
+          git push origin ${ secrets.DEPLOYMENT_BRANCH }
 
-      - name: Echo Cleanup Completed
-        run: echo "Temporary branch has been deleted."
-
+      # Step 9: Clean up: Delete stashed changes (if any)
+      - name: Clean up stashed changes
+        run: |
+          echo "Cleaning up stashed changes (if any)"
+          git stash clear
