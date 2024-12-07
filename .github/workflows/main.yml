@@ -19,20 +19,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Unity Build 👽
-    runs-on: ubuntu-22.04  # Asegúrate de usar Ubuntu 22.04 para el runner, el cual es coherente con la versión de Docker
+  # Checkout Repository Job
+  checkout:
+    name: Checkout Repository
+    runs-on: ubuntu-22.04  # Ensure Ubuntu version is consistent
     steps:
-      # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.PAT }}
+      
+      - name: Echo Checkout Completed
+        run: echo "Repository has been successfully checked out."
 
-      # Git LFS: Create file list and restore cache
+  # Git LFS Cache and Pull Job
+  lfs:
+    name: Git LFS Setup and Pull
+    runs-on: ubuntu-22.04
+    needs: checkout  # This job depends on the "checkout" job
+    steps:
       - name: Create LFS file list
         run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
-
+      
       - name: Restore LFS cache
         uses: actions/cache@v3
         id: lfs-cache
@@ -48,7 +56,15 @@ jobs:
           git add .
           git reset --hard
 
-      # Cache Unity Library
+      - name: Echo LFS Pull Completed
+        run: echo "Git LFS has been pulled and reset successfully."
+
+  # Cache Unity Library Job
+  cache-library:
+    name: Unity Library Cache
+    runs-on: ubuntu-22.04
+    needs: lfs  # This job depends on the "lfs" job
+    steps:
       - uses: actions/cache@v3
         with:
           path: Library
@@ -56,11 +72,19 @@ jobs:
           restore-keys: |
             Library-
 
-      # Pull Unity image and Build project using Unity Builder
-      - name: Build project
+      - name: Echo Unity Library Cache Completed
+        run: echo "Unity Library has been successfully cached."
+
+  # Build Project Job
+  build:
+    name: Build Unity Project
+    runs-on: ubuntu-22.04
+    needs: cache-library  # This job depends on the "cache-library" job
+    steps:
+      - name: Pull Unity Image and Build Project
         run: |
-          # Asegúrate de que se descarga la imagen correcta
-          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0  # Actualiza esta línea si la versión de la imagen es diferente
+          echo "Starting to pull Unity image and build project"
+          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0
           docker run --rm \
             -v $GITHUB_WORKSPACE:/workspace \
             -e UNITY_LICENSE=$UNITY_LICENSE \
@@ -72,22 +96,31 @@ jobs:
             -e BUILD_NAME=WebGL \
             -e BUILD_TARGET=WebGL \
             unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0 /bin/bash -c "/workspace/entrypoint.sh"
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-          BUILD_PATH: ${{ secrets.BUILD_PATH }}
-          GITHUB_WORKSPACE: ${{ github.workspace }}
+        
+      - name: Echo Build Completed
+        run: echo "Unity build has completed successfully."
 
-      # Upload build artifact
+  # Upload Build Artifact Job
+  upload:
+    name: Upload Build Artifact
+    runs-on: ubuntu-22.04
+    needs: build  # This job depends on the "build" job
+    steps:
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v3
         with:
           name: build-artifact
           path: ${{ secrets.BUILD_PATH }}
 
-      # Stash build result and reset local changes
+      - name: Echo Upload Completed
+        run: echo "Build artifact has been uploaded successfully."
+
+  # Stash and Reset Job
+  stash-reset:
+    name: Stash Build Result and Reset Local Changes
+    runs-on: ubuntu-22.04
+    needs: upload  # This job depends on the "upload" job
+    steps:
       - name: Stash build result and reset local changes
         run: |
           echo "Applying initial configs"
@@ -99,10 +132,18 @@ jobs:
           git reset --hard
           sudo git clean -d -x -f
 
-      # Clean and reset the gh-pages branch
+      - name: Echo Stash and Reset Completed
+        run: echo "Build result has been stashed and local changes have been reset."
+
+  # Clean and Deploy Job
+  deploy:
+    name: Clean and Deploy to gh-pages
+    runs-on: ubuntu-22.04
+    needs: stash-reset  # This job depends on the "stash-reset" job
+    steps:
       - name: Cleaning gh-pages branch
         run: |
-          echo "Switch to ${{ secrets.DEPLOYMENT_BRANCH }}"
+          echo "Switching to the deployment branch: ${{ secrets.DEPLOYMENT_BRANCH }}"
           git switch -f ${{ secrets.DEPLOYMENT_BRANCH }}
           git reset --hard
           sudo git clean -d -x -f
@@ -111,13 +152,11 @@ jobs:
           git commit -m "cleaning branch"
           git push
 
-      # Applying stashed files to gh-pages
-      - name: Applying stashed files to ${{ secrets.DEPLOYMENT_BRANCH }}
+      - name: Applying stashed files to gh-pages
         run: |
-          echo "Applying stash"
+          echo "Applying stashed files to gh-pages"
           git stash apply stash@{0}
 
-      # Copying files to the root directory
       - name: Copying files to root directory
         run: |
           cd ${{ secrets.BUILD_PATH }}/${{ secrets.TARGET_PLATFORM }}/${{ secrets.TARGET_PLATFORM }}
@@ -128,9 +167,9 @@ jobs:
           ls
           pwd
 
-      # Pushing deployment to gh-pages branch
       - name: Pushing deployment to gh-pages branch
         run: |
+          echo "Pushing deployment to gh-pages branch"
           pwd
           git status
           git add *
@@ -138,3 +177,6 @@ jobs:
           git push
         env:
           GH_TOKEN: ${{ secrets.PAT }}  # Use the authentication token for git push
+
+      - name: Echo Deployment Completed
+        run: echo "Deployment to gh-pages branch has been successfully completed."
