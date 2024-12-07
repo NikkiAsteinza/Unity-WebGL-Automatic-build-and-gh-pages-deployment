@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write  # Permiso para escribir en el repositorio
   pages: write
   id-token: write
 
@@ -19,35 +19,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Checkout Repository Job
+  # Checkout Repository
   checkout:
     name: Checkout Repository
-    runs-on: ubuntu-22.04  # Ensure Ubuntu version is consistent
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+      
+      - name: Echo Checkout Completed
+        run: echo "Repository has been successfully checked out."
+
+  # Create Temporary Branch and Sync with Main
+  sync-main:
+    name: Sync Temp Branch with Main
+    runs-on: ubuntu-22.04
+    needs: checkout
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.PAT }}
 
-      - name: Echo Checkout Completed
-        run: echo "Repository has been successfully checked out."
-
-  # Create Temporary Branch and Sync with Main Job
-  sync-main:
-    name: Sync Temp Branch with Main
-    runs-on: ubuntu-22.04
-    needs: checkout  # This job depends on the "checkout" job
-    steps:
       - name: Checkout deployment branch
         run: |
           echo "Checking out deployment branch: ${{ secrets.DEPLOYMENT_BRANCH }}"
           git checkout ${{ secrets.DEPLOYMENT_BRANCH }}
       
-      - name: Create temporary branch
+      - name: Create temporary branch from deployment branch
         run: |
-          echo "Creating temporary branch from ${{ secrets.DEPLOYMENT_BRANCH }}"
+          echo "Creating temporary branch"
           git checkout -b temp
-      
+
       - name: Pull latest changes from main
         run: |
           echo "Pulling latest changes from main"
@@ -62,6 +67,11 @@ jobs:
     runs-on: ubuntu-22.04
     needs: sync-main  # This job depends on the "sync-main" job
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+      
       - name: Pull Unity Image and Build Project
         run: |
           echo "Starting Unity build"
@@ -81,56 +91,76 @@ jobs:
       - name: Echo Build Completed
         run: echo "Unity build has completed successfully."
 
-  # Deploy to GitHub Pages Job
-  deploy:
-    name: Deploy to GitHub Pages and Upload Artifact
+  # Commit the Build Results and Push to Deployment Branch (if build is successful)
+  commit-and-push:
+    name: Commit and Push to Deployment Branch
     runs-on: ubuntu-22.04
     needs: build  # This job depends on the "build" job
     steps:
-      - name: Checkout Deployment Branch
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+      
+      - name: Checkout deployment branch
         run: |
           echo "Checking out deployment branch: ${{ secrets.DEPLOYMENT_BRANCH }}"
           git checkout ${{ secrets.DEPLOYMENT_BRANCH }}
-        
-      - name: Merge Temp Branch to Deployment Branch
+
+      - name: Merge temporary branch into deployment branch
         run: |
           echo "Merging changes from temp to deployment branch"
           git merge temp --no-ff --commit -m "Merge build changes into deployment branch"
-      
-      - name: Push Changes to Deployment Branch
+
+      - name: Push changes to deployment branch
         run: |
           echo "Pushing changes to deployment branch"
           git push origin ${{ secrets.DEPLOYMENT_BRANCH }}
       
-      - name: Upload Build Artifact
+      - name: Echo Commit and Push Completed
+        run: echo "Changes have been successfully committed and pushed to the deployment branch."
+
+  # Upload Build Artifact
+  upload-artifact:
+    name: Upload Build Artifact
+    runs-on: ubuntu-22.04
+    needs: commit-and-push  # This job depends on the "commit-and-push" job
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v3
         with:
           name: build-artifact
-          path: ${{ secrets.BUILD_PATH }}
-        
-      - name: Deploy to GitHub Pages
-        run: |
-          echo "Deploying to GitHub Pages"
-          # Any deployment script or commands you need for GitHub Pages here.
-        
-      - name: Echo Deployment Completed
-        run: echo "Deployment to GitHub Pages has been successfully completed."
+          path: ${{ secrets.BUILD_PATH }}  # Ensure this points to the folder with the build output
 
-  # Clean Temporary Branch Job
+      - name: Echo Artifact Uploaded
+        run: echo "Build artifact has been uploaded successfully."
+
+  # Clean up temporary branch (always delete the temp branch)
   cleanup:
     name: Clean Up Temporary Branch
     runs-on: ubuntu-22.04
-    needs: deploy  # This job depends on the "deploy" job
+    needs: upload-artifact  # This job depends on the "upload-artifact" job
     steps:
-      - name: Delete Temporary Branch
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+      
+      - name: Delete temporary branch locally
         run: |
           echo "Deleting temporary branch"
           git branch -D temp
         
-      - name: Push Cleanup
+      - name: Delete temporary branch remotely
         run: |
-          echo "Cleaning up remote branches"
+          echo "Deleting temporary branch from remote"
           git push origin --delete temp
 
       - name: Echo Cleanup Completed
         run: echo "Temporary branch has been deleted."
+
