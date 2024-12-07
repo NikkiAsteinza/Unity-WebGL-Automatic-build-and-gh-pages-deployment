@@ -63,7 +63,7 @@ jobs:
           allowDirtyBuild: true
       # Output: Artifact
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ vars.ARTIFACT_NAME }}
           path: ${{ vars.BUILD_PATH }}
