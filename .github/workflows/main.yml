@@ -59,7 +59,7 @@ jobs:
       # Pull Unity image and Build project using Unity Builder
       - name: Build project
         run: |
-          docker pull unityci/editor:2022.3.10f1  # Ensure the correct image is pulled
+          docker pull unityci/editor:ubuntu-2022.3.54f1-webgl-3.1.0  # Ensure the correct image is pulled
           docker run --rm \
             -v $GITHUB_WORKSPACE:/workspace \
             -e UNITY_LICENSE=$UNITY_LICENSE \
@@ -70,7 +70,7 @@ jobs:
             -e BUILD_PATH=$BUILD_PATH \
             -e BUILD_NAME=WebGL \
             -e BUILD_TARGET=WebGL \
-            unityci/editor:2022.3.10f1 /bin/bash -c "/workspace/entrypoint.sh"
+            unityci/editor:ubuntu-2022.3.54f1-webgl-3.1.01 /bin/bash -c "/workspace/entrypoint.sh"
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
