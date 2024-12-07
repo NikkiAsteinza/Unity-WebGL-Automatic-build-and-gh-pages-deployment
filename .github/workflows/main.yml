@@ -23,7 +23,7 @@ jobs:
     name: Unity Build 👽
     runs-on: ubuntu-latest
     steps:
-      # Checkout (without LFS)
+      # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
@@ -56,17 +56,19 @@ jobs:
           restore-keys: |
             Library-
 
-      # Build the project (using a Docker image)
+      # Build the project using Unity Builder (updated image)
       - name: Build project
         uses: game-ci/unity-builder@v2
+        with:
+          targetPlatform: WebGL  # Use WebGL platform directly
+          unityVersion: 2022.3.10f1 # Ensure the Unity version is set correctly
+          allowDirtyBuild: true
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          targetPlatform: WebGL  # Especificar directamente WebGL
-          buildsPath: ${{ secrets.BUILD_PATH }}
-          allowDirtyBuild: true
+          BUILD_PATH: ${{ secrets.BUILD_PATH }}
+          BUILD_NAME: WebGL
 
       # Upload build artifact
       - name: Upload Build Artifact
@@ -125,4 +127,4 @@ jobs:
           git commit -m "Deployment"
           git push
         env:
-          GH_TOKEN: ${{ secrets.PAT }}  # Usar el token de autenticación para git push
+          GH_TOKEN: ${{ secrets.PAT }}  # Use the authentication token for git push
