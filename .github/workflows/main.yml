@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build:
     name: Unity Build 👽
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Asegúrate de usar Ubuntu 22.04 para el runner, el cual es coherente con la versión de Docker
     steps:
       # Checkout repository
       - name: Checkout repository
@@ -59,7 +59,8 @@ jobs:
       # Pull Unity image and Build project using Unity Builder
       - name: Build project
         run: |
-          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0  # Ensure the latest image is pulled
+          # Asegúrate de que se descarga la imagen correcta
+          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0  # Actualiza esta línea si la versión de la imagen es diferente
           docker run --rm \
             -v $GITHUB_WORKSPACE:/workspace \
             -e UNITY_LICENSE=$UNITY_LICENSE \
