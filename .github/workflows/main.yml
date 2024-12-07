@@ -1,6 +1,9 @@
 name: Unity WebGL Automatic Build 👽✨🚀
 
 on:
+  push:
+    branches:
+      - '1-configure-as-a-unity-package'
   pull_request:
     branches:
       - 'main'
