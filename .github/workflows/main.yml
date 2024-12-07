@@ -59,8 +59,7 @@ jobs:
       # Pull Unity image and Build project using Unity Builder
       - name: Build project
         run: |
-          docker rmi $(docker images -q)
-          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0
+          docker pull unityci/editor:ubuntu-2022.3.10f1-webgl-3.1.0  # Ensure the latest image is pulled
           docker run --rm \
             -v $GITHUB_WORKSPACE:/workspace \
             -e UNITY_LICENSE=$UNITY_LICENSE \
