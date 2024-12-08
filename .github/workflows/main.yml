@@ -4,30 +4,26 @@ on:
     branches:
       - '1-configure-as-a-unity-package'
   pull_request:
-    branches:
+    branches:    
       - 'main'
   workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
   group: "pages"
   cancel-in-progress: false
-
 jobs:
   build:
     name: Unity Build 👽
     runs-on: ubuntu-latest
     steps:
-      # Checkout repository
+      # Checkout (without LFS)
       - name: Checkout repository
         uses: actions/checkout@v2
         with:
-          token: ${{ secrets.PAT }}
-      
+          token: ${{secrets.PAT}}
       # Git LFS
       - name: Create LFS file list
         run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
@@ -41,12 +37,11 @@ jobs:
 
       - name: Git LFS Pull
         run: |
-          echo "Pulling LFS files..."
           git lfs pull
           git add .
           git reset --hard
 
-      # Cache Unity Library
+      # # Cache
       - uses: actions/cache@v2
         with:
           path: Library
@@ -54,60 +49,66 @@ jobs:
           restore-keys: |
             Library-
 
-      # Unity Build
+      # # Build
       - name: Build project
-        uses: game-ci/unity-builder@v2
-        with:
-          unityVersion: '2022.3.10f1'
-          targetPlatform: WebGL
-          buildsPath: CI-Output/WebGL
-          allowDirtyBuild: true
+        uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-      
-      # Debug logs
-      - name: Log build directory
-        run: |
-          echo "Build Directory Contents:"
-          ls -la CI-Output/WebGL
-
+        with:
+          targetPlatform: ${{ vars.TARGET_PLATFORM }}
+          buildsPath: ${{ vars.BUILD_PATH }}
+          allowDirtyBuild: true
       # Output: Artifact
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v3
         with:
-          name: WebGL-Build
-          path: CI-Output/WebGL
-
+          name: ${{ vars.ARTIFACT_NAME }}
+          path: ${{ vars.BUILD_PATH }}
       # Deployment
-      - name: Deployment Preparation
+      - name: Stash build result and reset local changes
         run: |
-          echo "Preparing deployment..."
+          echo "Applying initial configs"
+          sudo chown -R $USER:$USER ${{ vars.BUILD_PATH }}
           git config --global user.email "${{ secrets.GH_EMAIL }}"
           git config --global user.name "${{ secrets.GH_USERNAME }}"
-          sudo chown -R $USER:$USER CI-Output/WebGL
-
-      - name: Cleaning gh-pages branch
-        run: |
-          echo "Switching to deployment branch..."
-          git switch -f gh-pages
+          echo "Stash and reset"
+          git add ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}
+          git stash push ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}
+          git stash list
           git reset --hard
           sudo git clean -d -x -f
-          rm -rf *
+    # Deployment
+      - name: Cleaning gh-pages branch
+        run: |
+          echo "Switch to ${{ vars.DEPLOYMENT_BRANCH }}"
+          git switch -f ${{ vars.DEPLOYMENT_BRANCH }}
+          git reset --hard
+          sudo git clean -d -x -f
+          rm -r *
           git add *
-          git commit -m "Cleaning branch for deployment"
+          git commit -m "cleaning branch"
           git push
-
-      - name: Copy Build to gh-pages
+      - name: Applying stashed files to ${{ vars.DEPLOYMENT_BRANCH }}
         run: |
-          echo "Copying build files to root..."
-          cp -r CI-Output/WebGL/* .
-          ls -la
-
-      - name: Push Deployment
+          echo "Applying stash"
+          git stash apply stash@{0}
+      - name: Copying files to root directory
         run: |
-          echo "Pushing to gh-pages branch..."
-          git add .
-          git commit -m "WebGL Deployment"
+          cd ${{ vars.BUILD_PATH }}/${{ vars.TARGET_PLATFORM }}/${{ vars.TARGET_PLATFORM }}
+          ls
+          cp -r * ../../../
+          cd ../../../
+          rm -r ${{ vars.BUILD_PATH }}
+          ls
+          pwd
+      - name: Pushing deployment to gh-pages branch
+        run: |
+          pwd
+          git status
+          git add *
+          git commit -m "Deployment"
           git push
+          git reset --hard
+          sudo git clean -d -x -f
